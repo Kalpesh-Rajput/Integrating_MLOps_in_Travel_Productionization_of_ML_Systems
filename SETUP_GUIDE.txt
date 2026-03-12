@@ -2,7 +2,7 @@
 # Follow this guide step-by-step to run the entire project on your local machine
 
 =============================================================================
-SYSTEM REQUIREMENTS
+STEP 1 -SYSTEM REQUIREMENTS
 =============================================================================
 OS           : Windows 10/11, macOS, or Ubuntu 20.04+
 RAM          : Minimum 8GB (16GB recommended)
@@ -11,22 +11,6 @@ Python       : 3.10 or 3.11
 Docker       : Docker Desktop (includes Docker Compose)
 Minikube     : Latest version (for Kubernetes)
 Git          : Latest version
-
-=============================================================================
-STEP 1 — EXTRACT & NAVIGATE TO PROJECT
-=============================================================================
-
-1. Extract the provided zip file:
-   travel-mlops-capstone.zip → travel-mlops-capstone/
-
-2. Open a terminal / command prompt and navigate:
-   cd travel-mlops-capstone
-
-3. Verify folder structure:
-   ls -la     (Linux/Mac)
-   dir        (Windows)
-
-   You should see: data/ models/ flask_api/ streamlit_app/ docker/ etc.
 
 =============================================================================
 STEP 2 — PYTHON ENVIRONMENT SETUP
