@@ -1,17 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TRAVEL MLOPS CAPSTONE — Google Colab Notebook
-# Author: [Your Name]
-# Project Summary: End-to-end ML pipeline for travel data analysis covering
-#   - Regression: Flight price prediction
-#   - Classification: User gender prediction
-#   - Recommendation: Hotel recommendation system
-# GitHub Repo: https://github.com/[your-username]/travel-mlops-capstone
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ============================================================
+───────────────────────────────────────────────────────────────────────────# ============================================================
 # CELL 1: Mount Drive & Install Dependencies
 # ============================================================
 """
