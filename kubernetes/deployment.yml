@@ -1,0 +1,147 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Kubernetes Deployment — Travel MLOps API
+# Apply:  kubectl apply -f deployment.yml
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Namespace ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: travel-mlops
+
+---
+# ─── Flask API Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-api
+  namespace: travel-mlops
+  labels:
+    app: travel-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: travel-api
+  template:
+    metadata:
+      labels:
+        app: travel-api
+    spec:
+      containers:
+        - name: travel-api
+          image: travel-mlops-api:latest
+          imagePullPolicy: Never          # use local image (for Minikube)
+          ports:
+            - containerPort: 5000
+          env:
+            - name: FLASK_ENV
+              value: "production"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu:    "250m"
+            limits:
+              memory: "512Mi"
+              cpu:    "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+---
+# ─── Flask API Service ─────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: travel-api-service
+  namespace: travel-mlops
+spec:
+  selector:
+    app: travel-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: LoadBalancer
+
+---
+# ─── Streamlit App Deployment ──────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-streamlit
+  namespace: travel-mlops
+  labels:
+    app: travel-streamlit
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: travel-streamlit
+  template:
+    metadata:
+      labels:
+        app: travel-streamlit
+    spec:
+      containers:
+        - name: travel-streamlit
+          image: travel-mlops-streamlit:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8501
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu:    "500m"
+            limits:
+              memory: "1Gi"
+              cpu:    "1000m"
+
+---
+# ─── Streamlit Service ─────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: travel-streamlit-service
+  namespace: travel-mlops
+spec:
+  selector:
+    app: travel-streamlit
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8501
+  type: LoadBalancer
+
+---
+# ─── Horizontal Pod Autoscaler ─────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: travel-api-hpa
+  namespace: travel-mlops
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: travel-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

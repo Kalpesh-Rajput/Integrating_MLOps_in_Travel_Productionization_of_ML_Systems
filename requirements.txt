@@ -1,0 +1,11 @@
+flask
+pandas
+numpy
+scikit-learn
+joblib
+matplotlib
+seaborn
+mlflow
+streamlit
+pytest
+gunicorn

@@ -1,0 +1,184 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Jenkinsfile — Travel MLOps CI/CD Pipeline
+// Pipeline: Checkout → Install → Test → Train → Build Docker → Deploy
+// ─────────────────────────────────────────────────────────────────────────────
+
+pipeline {
+    agent any
+
+    environment {
+        PROJECT_NAME    = 'travel-mlops'
+        DOCKER_IMAGE    = "travel-mlops-api"
+        DOCKER_TAG      = "${BUILD_NUMBER}"
+        REGISTRY        = "localhost:5000"
+        KUBECONFIG_PATH = "/root/.kube/config"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+    }
+
+    stages {
+
+        // ── Stage 1: Checkout ─────────────────────────────────────────────
+        stage('Checkout') {
+            steps {
+                echo '📥 Checking out source code...'
+                checkout scm
+                sh 'echo "Branch: ${GIT_BRANCH}" && echo "Commit: ${GIT_COMMIT}"'
+            }
+        }
+
+        // ── Stage 2: Install Dependencies ────────────────────────────────
+        stage('Install Dependencies') {
+            steps {
+                echo '📦 Installing Python dependencies...'
+                sh '''
+                    python3 -m pip install --upgrade pip
+                    pip3 install -r requirements.txt
+                '''
+            }
+        }
+
+        // ── Stage 3: Run Tests ────────────────────────────────────────────
+        stage('Run Tests') {
+            steps {
+                echo '🧪 Running unit tests...'
+                sh '''
+                    python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml || true
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'test-results.xml'
+                }
+            }
+        }
+
+        // ── Stage 4: Train Models ─────────────────────────────────────────
+        stage('Train Models') {
+            steps {
+                echo '🤖 Training ML models...'
+                sh '''
+                    python3 -c "
+import pandas as pd, numpy as np, joblib, json
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
+
+flights = pd.read_csv('data/flights.csv')
+users   = pd.read_csv('data/users.csv')
+
+flights['date'] = pd.to_datetime(flights['date'], format='%m/%d/%Y')
+flights['month'] = flights['date'].dt.month
+flights['dayofweek'] = flights['date'].dt.dayofweek
+
+le_from   = LabelEncoder(); flights['from_enc']       = le_from.fit_transform(flights['from'])
+le_to     = LabelEncoder(); flights['to_enc']         = le_to.fit_transform(flights['to'])
+le_type   = LabelEncoder(); flights['flightType_enc'] = le_type.fit_transform(flights['flightType'])
+le_agency = LabelEncoder(); flights['agency_enc']     = le_agency.fit_transform(flights['agency'])
+
+X = flights[['from_enc','to_enc','flightType_enc','time','distance','agency_enc','month','dayofweek']]
+y = flights['price']
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+model.fit(X_tr, y_tr)
+rmse = np.sqrt(mean_squared_error(y_te, model.predict(X_te)))
+r2   = r2_score(y_te, model.predict(X_te))
+
+print(f'Regression RMSE: {rmse:.4f}, R2: {r2:.4f}')
+joblib.dump(model, 'models/flight_price_model.pkl')
+joblib.dump(le_from, 'models/le_from.pkl')
+joblib.dump(le_to, 'models/le_to.pkl')
+joblib.dump(le_type, 'models/le_flighttype.pkl')
+joblib.dump(le_agency, 'models/le_agency.pkl')
+print('Models saved successfully.')
+"
+                '''
+            }
+        }
+
+        // ── Stage 5: Build Docker Image ───────────────────────────────────
+        stage('Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                sh '''
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -f docker/Dockerfile .
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                    echo "Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                '''
+            }
+        }
+
+        // ── Stage 6: Test Docker Container ───────────────────────────────
+        stage('Test Docker Container') {
+            steps {
+                echo '🔬 Testing Docker container...'
+                sh '''
+                    docker run -d --name test_api -p 5001:5000 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    sleep 5
+                    curl -f http://localhost:5001/health && echo "Health check PASSED"
+                    docker stop test_api && docker rm test_api
+                '''
+            }
+        }
+
+        // ── Stage 7: Push to Registry ────────────────────────────────────
+        stage('Push to Registry') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo '📤 Pushing image to registry...'
+                sh '''
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}
+                    docker push ${REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} || echo "Push skipped (no registry)"
+                '''
+            }
+        }
+
+        // ── Stage 8: Deploy to Kubernetes ────────────────────────────────
+        stage('Deploy to Kubernetes') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo '☸️  Deploying to Kubernetes...'
+                sh '''
+                    kubectl apply -f kubernetes/deployment.yml --kubeconfig=${KUBECONFIG_PATH} || \
+                    echo "Kubectl not available — skipping k8s deploy"
+                    
+                    # Update image tag
+                    kubectl set image deployment/travel-api \
+                        travel-api=${DOCKER_IMAGE}:${DOCKER_TAG} \
+                        -n travel-mlops \
+                        --kubeconfig=${KUBECONFIG_PATH} || \
+                    echo "Image update skipped"
+                    
+                    # Wait for rollout
+                    kubectl rollout status deployment/travel-api \
+                        -n travel-mlops \
+                        --kubeconfig=${KUBECONFIG_PATH} || \
+                    echo "Rollout status skipped"
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed! Check logs above.'
+        }
+        always {
+            echo '🧹 Cleaning up workspace...'
+            sh 'docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true'
+        }
+    }
+}

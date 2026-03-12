@@ -1,0 +1,384 @@
+# 🚀 TRAVEL MLOPS — COMPLETE LOCAL SETUP & EXECUTION GUIDE
+# Follow this guide step-by-step to run the entire project on your local machine
+
+=============================================================================
+SYSTEM REQUIREMENTS
+=============================================================================
+OS           : Windows 10/11, macOS, or Ubuntu 20.04+
+RAM          : Minimum 8GB (16GB recommended)
+Disk         : 10GB free space
+Python       : 3.10 or 3.11
+Docker       : Docker Desktop (includes Docker Compose)
+Minikube     : Latest version (for Kubernetes)
+Git          : Latest version
+
+=============================================================================
+STEP 1 — EXTRACT & NAVIGATE TO PROJECT
+=============================================================================
+
+1. Extract the provided zip file:
+   travel-mlops-capstone.zip → travel-mlops-capstone/
+
+2. Open a terminal / command prompt and navigate:
+   cd travel-mlops-capstone
+
+3. Verify folder structure:
+   ls -la     (Linux/Mac)
+   dir        (Windows)
+
+   You should see: data/ models/ flask_api/ streamlit_app/ docker/ etc.
+
+=============================================================================
+STEP 2 — PYTHON ENVIRONMENT SETUP
+=============================================================================
+
+# Create a virtual environment (recommended)
+python -m venv venv
+
+# Activate it:
+# Windows:
+venv\Scripts\activate
+
+# Mac/Linux:
+source venv/bin/activate
+
+# Install all dependencies
+pip install -r requirements.txt
+
+# Verify installation
+python -c "import sklearn, flask, mlflow, streamlit; print('All OK')"
+
+=============================================================================
+STEP 3 — TRAIN MODELS (Run the Colab Notebook Locally)
+=============================================================================
+
+# Run the notebook script directly
+python notebooks/travel_mlops_colab.py
+
+# This will:
+#   - Load flights.csv, hotels.csv, users.csv from data/
+#   - Perform EDA and generate visualizations in docs/
+#   - Train Regression model (Random Forest — flight price prediction)
+#   - Train Classification model (Random Forest — gender prediction)
+#   - Build Recommendation function (hotel suggestions)
+#   - Save all .pkl model files to models/
+#   - Save performance charts to docs/
+
+# Expected output:
+#   Regression:     RMSE ≈ 0.01,  R² ≈ 1.00
+#   Classification: Accuracy ≈ 58.6%
+#   ✅ All models saved!
+
+=============================================================================
+STEP 4 — RUN FLASK REST API (Local)
+=============================================================================
+
+# Start the Flask API
+python flask_api/app.py
+
+# API will start at: http://localhost:5000
+
+# ------ TEST ENDPOINTS ------
+
+# Test 1: Health Check
+curl http://localhost:5000/health
+# Expected: {"status": "healthy", "models_loaded": true}
+
+# Test 2: Get model metadata
+curl http://localhost:5000/metadata/regression
+
+# Test 3: Predict Flight Price
+curl -X POST http://localhost:5000/predict/flight-price \
+  -H "Content-Type: application/json" \
+  -d "{\"from\": \"Recife (PE)\", \"to\": \"Florianopolis (SC)\", \"flightType\": \"firstClass\", \"time\": 2.5, \"distance\": 700, \"agency\": \"FlyingDrops\", \"month\": 9, \"dayofweek\": 3}"
+
+# Expected: {"predicted_price": 1592.9, "currency": "USD", ...}
+
+# Test 4: Predict Gender
+curl -X POST http://localhost:5000/predict/gender \
+  -H "Content-Type: application/json" \
+  -d "{\"age\": 30, \"from\": \"Recife (PE)\", \"to\": \"Florianopolis (SC)\", \"flightType\": \"economic\", \"price\": 500, \"time\": 2.5, \"distance\": 700, \"agency\": \"FlyingDrops\", \"month\": 6}"
+
+# Expected: {"predicted_gender": "male/female", "confidence_percent": ..., ...}
+
+# Stop the API: Ctrl+C
+
+=============================================================================
+STEP 5 — RUN STREAMLIT APP
+=============================================================================
+
+# In a new terminal (keep your venv activated):
+streamlit run streamlit_app/app.py
+
+# Browser opens automatically at: http://localhost:8501
+
+# Features available:
+#   - 📊 Dashboard Overview   → Charts, stats, distributions
+#   - 🔮 Flight Price Predictor → Interactive price prediction
+#   - 🏨 Hotel Recommender     → Personalized hotel suggestions
+#   - 📈 Model Performance     → Metrics, feature importance
+#   - 🗺️ Travel Insights       → Heatmaps, correlations
+
+# Stop: Ctrl+C
+
+=============================================================================
+STEP 6 — DOCKER DEPLOYMENT
+=============================================================================
+
+# Make sure Docker Desktop is running!
+
+# --- Build Flask API Image ---
+docker build -t travel-mlops-api:latest -f docker/Dockerfile .
+
+# --- Run Flask API Container ---
+docker run -d -p 5000:5000 --name travel_api travel-mlops-api:latest
+
+# Test it's working:
+curl http://localhost:5000/health
+
+# --- Build Streamlit Image ---
+docker build -t travel-mlops-streamlit:latest -f docker/Dockerfile.streamlit .
+
+# --- Run Streamlit Container ---
+docker run -d -p 8501:8501 --name travel_streamlit travel-mlops-streamlit:latest
+
+# --- OR run both with Docker Compose ---
+docker-compose -f docker/docker-compose.yml up -d
+
+# Check running containers:
+docker ps
+
+# View logs:
+docker logs travel_api
+docker logs travel_streamlit
+
+# Stop containers:
+docker stop travel_api travel_streamlit
+docker rm travel_api travel_streamlit
+
+=============================================================================
+STEP 7 — KUBERNETES DEPLOYMENT (Minikube)
+=============================================================================
+
+# Step 7.1: Install Minikube
+# Windows: winget install minikube
+# Mac:     brew install minikube
+# Linux:   curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+
+# Step 7.2: Start Minikube
+minikube start --memory=4096 --cpus=2
+minikube status
+
+# Step 7.3: Load Docker images into Minikube (required for local images)
+minikube image load travel-mlops-api:latest
+minikube image load travel-mlops-streamlit:latest
+
+# Step 7.4: Apply Kubernetes configurations
+kubectl apply -f kubernetes/deployment.yml
+
+# Step 7.5: Verify deployment
+kubectl get namespaces
+kubectl get pods -n travel-mlops
+kubectl get services -n travel-mlops
+kubectl get deployments -n travel-mlops
+
+# Step 7.6: Get service URLs
+minikube service travel-api-service -n travel-mlops --url
+minikube service travel-streamlit-service -n travel-mlops --url
+
+# Step 7.7: Test the deployed API
+# Replace <MINIKUBE_IP> with the URL from above
+curl http://<MINIKUBE_IP>/health
+
+# Step 7.8: Test Horizontal Pod Autoscaler
+kubectl get hpa -n travel-mlops
+# HPA will scale between 2–10 pods based on CPU usage
+
+# Step 7.9: Manually scale
+kubectl scale deployment travel-api --replicas=5 -n travel-mlops
+kubectl get pods -n travel-mlops   # See 5 pods now
+
+# Stop minikube when done:
+minikube stop
+
+=============================================================================
+STEP 8 — APACHE AIRFLOW
+=============================================================================
+
+# Step 8.1: Install Airflow
+pip install apache-airflow==2.7.3 \
+    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+
+# Step 8.2: Set Airflow home directory
+export AIRFLOW_HOME=~/airflow       # Linux/Mac
+# Windows: set AIRFLOW_HOME=%USERPROFILE%\airflow
+
+# Step 8.3: Initialize database
+airflow db init
+
+# Step 8.4: Create admin user
+airflow users create \
+    --username admin \
+    --password admin123 \
+    --firstname Admin \
+    --lastname User \
+    --role Admin \
+    --email admin@example.com
+
+# Step 8.5: Set project path environment variable
+export TRAVEL_PROJECT_PATH=/full/path/to/travel-mlops-capstone
+
+# Step 8.6: Copy DAG to Airflow dags folder
+mkdir -p ~/airflow/dags
+cp airflow/dags/travel_pipeline_dag.py ~/airflow/dags/
+
+# Step 8.7: Start Airflow services (in separate terminals)
+# Terminal A:
+airflow webserver --port 8080
+
+# Terminal B:
+airflow scheduler
+
+# Step 8.8: Access UI at http://localhost:8080
+#   Login: admin / admin123
+#   Find DAG: "travel_mlops_pipeline"
+#   Click toggle to enable it
+#   Click "Trigger DAG" (▶ button) to run manually
+
+# Step 8.9: Watch the pipeline run:
+#   DAG Tasks:
+#     data_ingestion → data_preprocessing → train_regression
+#                                        → train_classification
+#                                              → evaluate_and_report → restart_api_service
+
+=============================================================================
+STEP 9 — JENKINS CI/CD PIPELINE
+=============================================================================
+
+# Step 9.1: Run Jenkins via Docker (easiest)
+docker run -d -p 8080:8080 -p 50000:50000 \
+    -v jenkins_home:/var/jenkins_home \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    --name jenkins \
+    jenkins/jenkins:lts-jdk17
+
+# Step 9.2: Get initial admin password
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+# Step 9.3: Setup Jenkins
+#   Open http://localhost:8080
+#   Enter admin password
+#   Install suggested plugins (wait ~5 minutes)
+#   Create admin user
+
+# Step 9.4: Install additional plugins
+#   Jenkins → Manage Jenkins → Plugins → Available
+#   Install: "Pipeline", "Git Plugin", "Docker Pipeline"
+
+# Step 9.5: Push your project to GitHub
+git init
+git add .
+git commit -m "Initial Travel MLOps project"
+git remote add origin https://github.com/[your-username]/travel-mlops-capstone.git
+git push -u origin main
+
+# Step 9.6: Create Pipeline Job in Jenkins
+#   Jenkins → New Item → Enter "travel-mlops-pipeline" → Pipeline → OK
+#   Scroll to "Pipeline" section
+#   Definition: "Pipeline script from SCM"
+#   SCM: Git
+#   Repository URL: https://github.com/[your-username]/travel-mlops-capstone.git
+#   Script Path: jenkins/Jenkinsfile
+#   Save
+
+# Step 9.7: Run Pipeline
+#   Click "Build Now"
+#   Watch Console Output for each stage:
+#   ✅ Checkout → Install → Tests → Train Models → Build Docker → Deploy
+
+=============================================================================
+STEP 10 — MLFLOW EXPERIMENT TRACKING
+=============================================================================
+
+# Step 10.1: Run the MLflow training script
+# (This trains multiple models and logs all to MLflow)
+python mlflow_tracking/mlflow_train.py
+
+# Expected output:
+#   [1/2] Running Regression Experiments...
+#   [Linear Regression]    RMSE=...  R2=...
+#   [RandomForest n=50]    RMSE=...  R2=...
+#   [RandomForest n=100]   RMSE=...  R2=...  *** BEST ***
+#   [GradientBoosting]     RMSE=...  R2=...
+#   [2/2] Running Classification Experiments...
+#   [LogisticRegression]   Accuracy=...
+#   [RandomForest Clf]     Accuracy=...  *** BEST ***
+
+# Step 10.2: Launch MLflow UI
+mlflow ui --backend-store-uri sqlite:///mlflow_tracking/mlruns.db --port 5001
+
+# Step 10.3: Open http://localhost:5001
+#   Explore:
+#   - Experiments: Flight_Price_Prediction, Gender_Classification
+#   - Compare runs side-by-side
+#   - View metrics: RMSE, R², MAE, Accuracy, F1
+#   - Download model artifacts
+#   - Register best models: FlightPricePredictor, GenderClassifier
+
+=============================================================================
+STEP 11 — RUN UNIT TESTS
+=============================================================================
+
+# Make sure Flask API is NOT running on port 5000
+# Run all tests
+pytest tests/ -v
+
+# Expected output:
+#   test_api.py::test_home                      PASSED
+#   test_api.py::test_health                    PASSED
+#   test_api.py::test_metadata_regression       PASSED
+#   test_api.py::test_metadata_classification   PASSED
+#   test_api.py::test_predict_flight_price_valid PASSED
+#   test_api.py::test_predict_flight_price_missing_field PASSED
+#   test_api.py::test_predict_gender_valid      PASSED
+#   test_api.py::test_predict_gender_missing_field PASSED
+#   8 passed in X.XXs
+
+=============================================================================
+COMPLETE WORKFLOW SUMMARY
+=============================================================================
+
+1.  python notebooks/travel_mlops_colab.py    → Train models
+2.  python flask_api/app.py                   → Start REST API (port 5000)
+3.  streamlit run streamlit_app/app.py        → Start dashboard (port 8501)
+4.  docker-compose -f docker/docker-compose.yml up -d  → Containerize
+5.  kubectl apply -f kubernetes/deployment.yml → Deploy to K8s
+6.  airflow webserver + airflow scheduler      → Schedule pipelines
+7.  Jenkins build                             → CI/CD pipeline
+8.  python mlflow_tracking/mlflow_train.py    → Track experiments
+9.  pytest tests/ -v                          → Run tests
+
+=============================================================================
+TROUBLESHOOTING
+=============================================================================
+
+Problem: Port 5000 already in use
+Fix:     lsof -ti:5000 | xargs kill -9    (Mac/Linux)
+         netstat -ano | findstr :5000     (Windows, then kill the PID)
+
+Problem: Model file not found
+Fix:     Run Step 3 first: python notebooks/travel_mlops_colab.py
+
+Problem: Docker image not found in Minikube
+Fix:     eval $(minikube docker-env) && docker build ...
+         OR: minikube image load <image-name>
+
+Problem: Airflow DAG not showing up
+Fix:     Check AIRFLOW_HOME is set correctly
+         Verify DAG file is in ~/airflow/dags/
+         Run: airflow dags list
+
+Problem: MLflow port 5000 conflicts with Flask
+Fix:     mlflow ui --port 5001 (use a different port)
+
+=============================================================================
